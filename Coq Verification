@@ -1,0 +1,58 @@
+Require Import Arith.
+Require Import Nat.
+Require Import List.
+Import ListNotations.
+
+(* Primality test *)
+Fixpoint check_prime (n d : nat) : bool :=
+  match d with
+  | 0 => true
+  | 1 => true
+  | S d' => if Nat.eqb (n mod d) 0 then false else check_prime n d'
+  end.
+
+Definition is_prime (n : nat) : bool :=
+  match n with
+  | 0 | 1 => false
+  | 2 => true
+  | _ => check_prime n (n - 1)
+  end.
+
+(* Smallest prime factor with fuel *)
+Fixpoint spf_from (n d fuel : nat) : nat :=
+  match fuel with
+  | 0 => n
+  | S fuel' =>
+      if Nat.ltb n d then n
+      else if andb (Nat.eqb (n mod d) 0) (is_prime d)
+           then d
+           else spf_from n (d + 1) fuel'
+  end.
+
+Definition spf (n : nat) : nat :=
+  if Nat.ltb n 2 then n else spf_from n 2 n.
+
+(* Next prime greater than n, with fuel *)
+Fixpoint nextprime_from (n fuel : nat) : nat :=
+  match fuel with
+  | 0 => n
+  | S fuel' => if is_prime n then n else nextprime_from (n + 1) fuel'
+  end.
+
+Definition nextprime (n : nat) : nat := nextprime_from (n + 1) 1000.
+
+(* Prime Vortex step *)
+Definition pv_step (a n : nat) : nat :=
+  if is_prime n then a * n + nextprime n
+  else if Nat.eqb n 1 then 1
+  else n / spf n.
+
+(* Sequence as a list *)
+Fixpoint pv_seq (a n0 len : nat) : list nat :=
+  match len with
+  | 0 => []
+  | S len' => n0 :: pv_seq a (pv_step a n0) len'
+  end.
+
+(* Example: first 10 terms, a = 2, n0 = 7 *)
+Eval compute in (pv_seq 2 7 10).
