@@ -1,0 +1,126 @@
+Require Import Arith.
+Require Import Nat.
+Require Import List.
+Import ListNotations.
+
+(* More efficient primality test *)
+Fixpoint check_prime_aux (n d fuel : nat) : bool :=
+  match fuel with
+  | 0 => true  (* timeout, assume prime *)
+  | S fuel' => 
+      if Nat.ltb (d * d) n then
+        if Nat.eqb (n mod d) 0 then false 
+        else check_prime_aux n (d + 1) fuel'
+      else true
+  end.
+
+Definition is_prime (n : nat) : bool :=
+  match n with
+  | 0 | 1 => false
+  | 2 => true
+  | S (S _) => check_prime_aux n 2 n
+  end.
+
+(* Smallest prime factor with better efficiency *)
+Fixpoint spf_aux (n d fuel : nat) : nat :=
+  match fuel with
+  | 0 => n  (* timeout fallback *)
+  | S fuel' =>
+      if Nat.ltb d n then  (* Changed from (d * d) < n to d < n *)
+        if Nat.eqb (n mod d) 0 then d
+        else spf_aux n (d + 1) fuel'
+      else n
+  end.
+
+Definition spf (n : nat) : nat :=
+  match n with
+  | 0 | 1 => n
+  | 2 => 2
+  | S (S _) => spf_aux n 2 n
+  end.
+
+(* Next prime with reasonable bound *)
+Fixpoint nextprime_aux (n fuel : nat) : nat :=
+  match fuel with
+  | 0 => n  (* fallback, should not happen for reasonable inputs *)
+  | S fuel' => 
+      if is_prime n then n 
+      else nextprime_aux (n + 1) fuel'
+  end.
+
+Definition nextprime (n : nat) : nat := 
+  nextprime_aux (n + 1) (10 * n).  (* Much more generous upper bound *)
+
+(* Prime Vortex step *)
+Definition pv_step (a n : nat) : nat :=
+  if is_prime n then a * n + nextprime n
+  else if Nat.eqb n 1 then 1
+  else if Nat.eqb (spf n) 0 then n  (* safety check *)
+  else n / spf n.
+
+(* Sequence generation *)
+Fixpoint pv_seq (a n0 len : nat) : list nat :=
+  match len with
+  | 0 => []
+  | S len' => n0 :: pv_seq a (pv_step a n0) len'
+  end.
+
+(* Cycle detection *)
+Fixpoint find_cycle_aux (a n0 steps max_steps : nat) (seen : list nat) : option (list nat) :=
+  match max_steps with
+  | 0 => None  (* timeout *)
+  | S max_steps' =>
+      if existsb (Nat.eqb n0) seen then
+        Some (rev seen)  (* found cycle *)
+      else
+        find_cycle_aux a (pv_step a n0) (S steps) max_steps' (n0 :: seen)
+  end.
+
+Definition find_cycle (a n0 max_steps : nat) : option (list nat) :=
+  find_cycle_aux a n0 0 max_steps [].
+
+(* Debug individual steps - let's see what's wrong *)
+Eval compute in (is_prime 7).        (* Should be true *)
+Eval compute in (nextprime 7).       (* Should be 11 *)
+Eval compute in (2 * 7 + nextprime 7). (* Should be 25 *)
+Eval compute in (pv_step 2 7).       (* Should be 25 *)
+
+Eval compute in (is_prime 25).       (* Should be false *)
+Eval compute in (spf 25).           (* Should be 5 *)
+Eval compute in (25 / spf 25).      (* Should be 5 *)
+Eval compute in (pv_step 2 25).     (* Should be 5 *)
+
+Eval compute in (is_prime 5).        (* Should be true *)
+Eval compute in (nextprime 5).       (* Should be 7 *)
+Eval compute in (2 * 5 + nextprime 5). (* Should be 17 *)
+Eval compute in (pv_step 2 5).       (* Should be 17 *)
+
+(* Test the main claim *)
+Eval compute in (pv_seq 2 7 15).
+
+Eval compute in (find_cycle 2 7 100).
+(* Should detect the 9-cycle *)
+
+(* Test a few other starting values *)
+Eval compute in (pv_seq 2 100 20).
+Eval compute in (pv_seq 2 1000 25).
+
+(* Verify cycle closure property *)
+Definition cycle_9 := [7; 25; 5; 17; 53; 165; 55; 11; 35].
+
+Fixpoint verify_cycle_aux (a : nat) (orig_cycle current_cycle : list nat) : bool :=
+  match current_cycle with
+  | [] => true
+  | [x] => 
+      match orig_cycle with
+      | y :: _ => Nat.eqb (pv_step a x) y  (* last maps to first *)
+      | [] => false
+      end
+  | x :: (y :: _ as xs) => Nat.eqb (pv_step a x) y && verify_cycle_aux a orig_cycle xs
+  end.
+
+Definition verify_cycle (a : nat) (cycle : list nat) : bool :=
+  verify_cycle_aux a cycle cycle.
+
+Eval compute in (verify_cycle 2 cycle_9).
+(* Should return true, confirming cycle closure *)
